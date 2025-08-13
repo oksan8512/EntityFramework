@@ -1,36 +1,44 @@
-﻿using System;
+﻿using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace EntityFramework.Services;
 
 public class AuthorServices
 {
-    private List<Author> authors;
-    private int id;
-    private const string filePath = "authors.json";
+    private readonly BookDbContext _context;
 
-    public AuthorServices(List<Author> authors, int id)
+    public AuthorServices(BookDbContext context)
     {
-        this.authors = authors;
-        this.id = id;
-        LoadAuthors();
+        _context = context;
+        SeedInitialData(); 
     }
 
-    public void AddAuthors(Author author)
+    private void SeedInitialData()
     {
-        author.Id = this.id++;
-        authors.Add(author);
+        if (!_context.Authors.Any())
+        {
+            var authors = new List<Author>
+            {
+                new Author(0, "Вільям", "Шекспір", "Англія", new DateTime(1564, 4, 26), "Великий драматург"),
+                new Author(0, "Дж. Р. Р.", "Толкін", "Велика Британія", new DateTime(1892, 1, 3), "Автор 'Володаря перснів'"),
+                new Author(0, "Дж. К.", "Роулінг", "Велика Британія", new DateTime(1965, 7, 31), "Автор 'Гаррі Поттера'")
+            };
+            _context.Authors.AddRange(authors);
+            _context.SaveChanges();
+        }
+    }
 
-        SafeAuthors();
+    public void AddAuthor(Author author)
+    {
+        _context.Authors.Add(author);
+        _context.SaveChanges();
     }
 
     public void GetAllAuthors()
     {
+        var authors = _context.Authors.Include(a => a.Books).ToList();
         if (!authors.Any())
         {
             Console.WriteLine("Список авторів порожній.");
@@ -39,73 +47,94 @@ public class AuthorServices
 
         foreach (var author in authors)
         {
-            Console.WriteLine(author); 
+            Console.WriteLine(author);
+            if (author.Books.Any())
+            {
+                Console.WriteLine("Книги автора:");
+                foreach (var book in author.Books)
+                {
+                    Console.WriteLine($"\t{book}");
+                }
+            }
         }
     }
 
-
-    public void DeleteAuthors(int id)
+    public void DeleteAuthor(int id)
     {
-        var authorToDelete = GetAuthorById(id);
-
-        if (authorToDelete != null)
+        var author = GetAuthorById(id);
+        if (author != null)
         {
-            authors.Remove(authorToDelete);
-            SafeAuthors();
+            _context.Authors.Remove(author);
+            _context.SaveChanges();
+            Console.WriteLine("Автор видалений (книги видалені через каскадне видалення).");
         }
         else
-            Console.WriteLine($"Author with ID {id} not found.");
-        
+        {
+            Console.WriteLine($"Автор з ID {id} не знайдений.");
+        }
     }
 
-    public Author? GetAuthorById(int id)
+    public Author GetAuthorById(int id)
     {
-        return authors.FirstOrDefault(a => a.Id == id);
+        return _context.Authors.FirstOrDefault(a => a.Id == id);
     }
 
     public bool UpdateAuthor(int id, Author updatedAuthor)
     {
         var existingAuthor = GetAuthorById(id);
-
         if (existingAuthor == null)
             return false;
 
-        updatedAuthor.Id = id;
-        var index = authors.IndexOf(existingAuthor);
+        existingAuthor.FirstName = updatedAuthor.FirstName;
+        existingAuthor.LastName = updatedAuthor.LastName;
+        existingAuthor.Country = updatedAuthor.Country;
+        existingAuthor.BirthDate = updatedAuthor.BirthDate;
+        existingAuthor.Biography = updatedAuthor.Biography;
 
-        authors[index] = updatedAuthor;
-
-        SafeAuthors();
+        _context.SaveChanges();
         Console.WriteLine($"Автора '{updatedAuthor.FirstName} {updatedAuthor.LastName}' успішно оновлено!");
         return true;
     }
 
-    public void SafeAuthors()
+    public void AddBook(Book book)
     {
-        var json = System.Text.Json.JsonSerializer.Serialize(authors);
-        File.WriteAllText(filePath, json);
+        _context.Books.Add(book);
+        _context.SaveChanges();
     }
 
-    public void LoadAuthors()
+    public bool UpdateBook(int id, Book updatedBook)
     {
-        if (!File.Exists(filePath))
+        var existingBook = _context.Books.FirstOrDefault(b => b.Id == id);
+        if (existingBook == null)
+            return false;
+
+        existingBook.Title = updatedBook.Title;
+        existingBook.PublicationYear = updatedBook.PublicationYear;
+        existingBook.AuthorId = updatedBook.AuthorId;
+
+        _context.SaveChanges();
+        Console.WriteLine($"Книгу '{updatedBook.Title}' успішно оновлено!");
+        return true;
+    }
+
+    public void DeleteBook(int id)
+    {
+        var book = _context.Books.FirstOrDefault(b => b.Id == id);
+        if (book != null)
         {
-            authors = new List<Author>();
-            id = 1;
-            SafeAuthors(); 
-            Console.WriteLine("Файл authors.json не знайдено. Створено новий порожній файл.");
-            return;
+            _context.Books.Remove(book);
+            _context.SaveChanges();
+            Console.WriteLine("Книга видалена.");
         }
-
-        var json = File.ReadAllText(filePath);
-        authors = JsonSerializer.Deserialize<List<Author>>(json) ?? new List<Author>();
-
-        if (authors.Any())
+        else
         {
-            id = authors.Max(a => a.Id) + 1;
+            Console.WriteLine($"Книга з ID {id} не знайдена.");
         }
     }
 
 
-
+    public Book GetBookById(int id)
+    {
+        return _context.Books.FirstOrDefault(b => b.Id == id);
+    }
 }
